@@ -300,6 +300,43 @@ impl MemorySet {
             false
         }
     }
+
+    /// try to map vritual address [start_va ; end_va] to physical address
+    pub fn try_map(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) -> isize {
+        let area = MapArea::new(start_va, end_va, MapType::Framed, permission);
+        // check if the area is alreay mapped
+        for vpn in area.vpn_range {
+            if let Some(pte) = self.translate(vpn) {
+                if pte.is_valid() {
+                    return -1;
+                }
+            }
+        }
+        // now insert into non-used memory space
+        self.insert_framed_area(start_va, end_va, permission);
+        0
+    }
+
+    /// try to unmap
+    pub fn try_unmap(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        let mut area = MapArea::new(start_va, end_va, MapType::Framed, MapPermission::U);
+        for vpn in area.vpn_range {
+            if let Some(pte) = self.translate(vpn) {
+                if !pte.is_valid() {
+                    return -1;
+                }
+            } else {
+                return -1;
+            }
+        }
+        area.unmap(&mut self.page_table);
+        0
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
