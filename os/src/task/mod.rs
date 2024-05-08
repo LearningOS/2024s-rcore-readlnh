@@ -14,12 +14,13 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
-use crate::config::MAX_SYSCALL_NUM;
-use crate::timer::get_time_ms;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
@@ -190,6 +191,22 @@ impl TaskManager {
         let current = inner.current_task;
         get_time_ms() - inner.tasks[current].start_time
     }
+
+    /// try to map vritual address [start_va ; end_va] to physical address
+    fn try_map(&self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let current_mem_set = &mut inner.tasks[current].memory_set;
+        current_mem_set.try_map(start_va, end_va, permission)
+    }
+
+    /// try to unmap
+    fn try_unmap(&self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let current_mem_set = &mut inner.tasks[current].memory_set;
+        current_mem_set.try_unmap(start_va, end_va)
+    }
 }
 
 /// Run the first task in task list.
@@ -261,4 +278,14 @@ pub fn get_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
 /// get the running time of the task
 pub fn get_times() -> usize {
     TASK_MANAGER.get_times()
+}
+
+/// try to map vritual address [start_va ; end_va] to physical address
+pub fn try_map(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) -> isize {
+    TASK_MANAGER.try_map(start_va, end_va, permission)
+}
+
+/// try to unmap
+pub fn try_unmap(start_va: VirtAddr, end_va: VirtAddr) -> isize {
+    TASK_MANAGER.try_unmap(start_va, end_va)
 }
