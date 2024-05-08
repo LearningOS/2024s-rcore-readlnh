@@ -5,10 +5,11 @@ use alloc::sync::Arc;
 use crate::{
     config::MAX_SYSCALL_NUM,
     fs::{open_file, OpenFlags},
-    mm::{translated_refmut, translated_str, translated_byte_buffer},
+    config::PAGE_SIZE,
+    mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission, VirtAddr},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, TaskStatus, get_running_time, get_task_status, get_syscall_times
+        add_task, current_task, current_user_token, exit_current_and_run_next, get_running_time,
+        get_syscall_times, get_task_status, suspend_current_and_run_next, TaskStatus,
     },
     timer::get_time_us,
 };
@@ -179,22 +180,49 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     0
 }
 
-/// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+// YOUR JOB: Implement mmap.
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+    // start mut be aligned with page
+    if start % PAGE_SIZE != 0 {
+        return -1;
+    }
+
+    if port & !0x7 != 0 || port & 0x7 == 0 {
+        return -1;
+    }
+
+    let start_va: VirtAddr = start.into();
+    let end_va: VirtAddr = (start + len).into();
+
+    let flags = (port as u8) << 1;
+
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .memory_set
+        .try_map(
+            start_va,
+            end_va,
+            MapPermission::from_bits(flags).unwrap() | MapPermission::U,
+        )
 }
 
-/// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+// YOUR JOB: Implement munmap.
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
+    // start mut be aligned with page
+    if start % PAGE_SIZE != 0 {
+        return -1;
+    }
+
+    let start_va: VirtAddr = start.into();
+    let end_va: VirtAddr = (start + len).into();
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .memory_set
+        .try_unmap(start_va, end_va)
 }
 
 /// change data segment size
