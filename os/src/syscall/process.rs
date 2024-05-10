@@ -8,7 +8,7 @@ use crate::{
     mm::{translated_refmut, translated_str, translated_byte_buffer},
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, TaskStatus,
+        suspend_current_and_run_next, TaskStatus, get_running_time, get_task_status, get_syscall_times
     },
     timer::get_time_us,
 };
@@ -146,35 +146,35 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 /// YOUR JOB: Finish sys_task_info to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
-pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
+pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
 
-    // if ti.is_null() {
-    //     return -1;
-    // }
-    // let mut translated_ti = translated_byte_buffer(
-    //     current_user_token(),
-    //     ti as *const u8,
-    //     core::mem::size_of::<TaskInfo>(),
-    // );
+    if ti.is_null() {
+        return -1;
+    }
+    let mut translated_ti = translated_byte_buffer(
+        current_user_token(),
+        ti as *const u8,
+        core::mem::size_of::<TaskInfo>(),
+    );
 
-    // // Check if the translated buffer is empty
-    // if translated_ti.is_empty() {
-    //     return -1;
-    // }
+    // Check if the translated buffer is empty
+    if translated_ti.is_empty() {
+        return -1;
+    }
 
-    // // Ensure that the translated buffer has enough bytes to store a `TaskInfo`
-    // if translated_ti[0].len() < core::mem::size_of::<TaskInfo>() {
-    //     return -1;
-    // }
+    // Ensure that the translated buffer has enough bytes to store a `TaskInfo`
+    if translated_ti[0].len() < core::mem::size_of::<TaskInfo>() {
+        return -1;
+    }
 
     // Fill in the task information
-    // unsafe {
-    //     let ti_ptr = translated_ti[0].as_mut_ptr() as *mut TaskInfo;
-    //     (*ti_ptr).status = get_task_status();
-    //     (*ti_ptr).syscall_times = get_syscall_times();
-    //     (*ti_ptr).time = get_times();
-    // }
+    unsafe {
+        let ti_ptr = translated_ti[0].as_mut_ptr() as *mut TaskInfo;
+        (*ti_ptr).status = get_task_status();
+        (*ti_ptr).syscall_times = get_syscall_times();
+        (*ti_ptr).time = get_running_time();
+    }
 
     0
 }
