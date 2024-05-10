@@ -7,7 +7,9 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
+use crate::config::MAX_SYSCALL_NUM;
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
@@ -61,6 +63,10 @@ pub fn run_tasks() {
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+            if task_inner.start_time == 0 {
+                task_inner.start_time = get_time_ms();
+            }
+
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
@@ -98,6 +104,39 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
         .unwrap()
         .inner_exclusive_access()
         .get_trap_cx()
+}
+
+/// Add syscall times for the current task
+pub fn add_syscall_times(syscall_id: usize) {
+    if syscall_id >= MAX_SYSCALL_NUM {
+        panic!("Syscall id must less than 500!");
+    }
+    let task = current_task().unwrap();
+    task.inner_exclusive_access().add_syscall_times(syscall_id);
+}
+
+/// get the running time of the task
+pub fn get_running_time() -> usize {
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .get_running_time()
+}
+
+/// get the syscall times of the task
+pub fn get_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .get_syscall_times()
+}
+
+/// get the task's status
+pub fn get_task_status() -> TaskStatus {
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .get_status()
 }
 
 ///Return to idle control flow for new scheduling
