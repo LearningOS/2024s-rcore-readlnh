@@ -77,6 +77,10 @@ pub struct TaskControlBlockInner {
     pub syscall_times: [u32; MAX_SYSCALL_NUM],
     /// start time of task
     pub start_time: usize,
+    /// stride
+    pub stride: usize,
+    /// priority of the task
+    pub prio: usize,
 }
 
 impl TaskControlBlockInner {
@@ -157,6 +161,8 @@ impl TaskControlBlock {
                     program_brk: user_sp,
                     syscall_times: [0; MAX_SYSCALL_NUM],
                     start_time: 0,
+                    stride: 0,
+                    prio: 16,
                 })
             },
         };
@@ -240,6 +246,8 @@ impl TaskControlBlock {
                     program_brk: parent_inner.program_brk,
                     syscall_times: [0; MAX_SYSCALL_NUM],
                     start_time: 0,
+                    stride: 0,
+                    prio: 16,
                 })
             },
         });
@@ -262,7 +270,6 @@ impl TaskControlBlock {
         parent_inner.children.push(child_task.clone());
         child_task
     }
-    
 
     /// get pid of process
     pub fn getpid(&self) -> usize {
@@ -293,6 +300,32 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+}
+
+impl PartialOrd for TaskControlBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        other
+            .inner_exclusive_access()
+            .stride
+            .partial_cmp(&self.inner_exclusive_access().stride)
+    }
+}
+
+impl PartialEq for TaskControlBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner_exclusive_access().stride == other.inner_exclusive_access().stride
+    }
+}
+
+impl Eq for TaskControlBlock {}
+
+impl Ord for TaskControlBlock {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        other
+            .inner_exclusive_access()
+            .stride
+            .cmp(&self.inner_exclusive_access().stride)
     }
 }
 
