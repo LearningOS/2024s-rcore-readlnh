@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 use spin::{Mutex, MutexGuard};
 /// Virtual filesystem layer over easy-fs
 pub struct Inode {
+    inode_id: usize,
     block_id: usize,
     block_offset: usize,
     fs: Arc<Mutex<EasyFileSystem>>,
@@ -17,12 +18,14 @@ pub struct Inode {
 impl Inode {
     /// Create a vfs inode
     pub fn new(
+        inode_id: u32,
         block_id: u32,
         block_offset: usize,
         fs: Arc<Mutex<EasyFileSystem>>,
         block_device: Arc<dyn BlockDevice>,
     ) -> Self {
         Self {
+            inode_id: inode_id as usize,
             block_id: block_id as usize,
             block_offset,
             fs,
@@ -65,6 +68,7 @@ impl Inode {
             self.find_inode_id(name, disk_inode).map(|inode_id| {
                 let (block_id, block_offset) = fs.get_disk_inode_pos(inode_id);
                 Arc::new(Self::new(
+                    inode_id,
                     block_id,
                     block_offset,
                     self.fs.clone(),
@@ -131,6 +135,7 @@ impl Inode {
         block_cache_sync_all();
         // return inode
         Some(Arc::new(Self::new(
+            new_inode_id,
             block_id,
             block_offset,
             self.fs.clone(),
@@ -182,5 +187,98 @@ impl Inode {
             }
         });
         block_cache_sync_all();
+    }
+
+    /// link
+    pub fn link(&self, old_name: &str, new_name: &str) -> isize {
+        let old_inode = if let Some(inode) = self.find(old_name) {
+            inode
+        } else {
+            return -1;
+        };
+
+        old_inode.modify_disk_inode(|disk_inode| {
+            disk_inode.nlink += 1;
+        });
+
+        let mut fs = self.fs.lock();
+
+        self.modify_disk_inode(|disk_inode| {
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            let new_size = (file_count + 1) * DIRENT_SZ;
+            self.increase_size(new_size as u32, disk_inode, &mut fs);
+            let dirent = DirEntry::new(new_name, old_inode.inode_id as u32);
+            disk_inode.write_at(
+                file_count * DIRENT_SZ,
+                dirent.as_bytes(),
+                &self.block_device,
+            );
+        });
+
+        block_cache_sync_all();
+        0
+    }
+
+    /// unlink
+    pub fn unlink(&self, path: &str) -> isize {
+        // 找到文件的 inode 并减少链接数
+        let inode = if let Some(inode) = self.find(path) {
+            inode
+        } else {
+            return -1; // 文件未找到，返回 -1
+        };
+
+        // 获取文件系统锁
+        let _fs = self.fs.lock();
+
+        inode.modify_disk_inode(|disk_inode| {
+            disk_inode.nlink -= 1;
+            if disk_inode.nlink == 0 {
+                disk_inode.clear_size(&self.block_device);
+            }
+        });
+
+        // 修改包含文件的目录 inode
+        let result = self.modify_disk_inode(|disk_inode| {
+            let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+            let mut dirent = DirEntry::empty();
+
+            for i in 0..file_count {
+                let dirent_size =
+                    disk_inode.read_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device);
+
+
+                if dirent_size != DIRENT_SZ {
+                    return -1; // 读取目录项失败，返回 -1
+                }
+
+                if dirent.name() == path {
+                    // 将匹配的目录项删除
+                    disk_inode.write_at(
+                        DIRENT_SZ * i,
+                        DirEntry::empty().as_bytes(),
+                        &self.block_device,
+                    );
+                    // 更新目录 inode 的大小
+                    if i == file_count - 1 {
+                        // 如果删除的是最后一个目录项，则减少目录大小
+                        disk_inode.size = ((file_count - 1) * DIRENT_SZ) as u32;
+                    }
+
+                    
+                    return 0; // 成功删除目录项，返回 0
+                }
+            }
+            -1 // 未找到目录项，返回 -1
+        });
+        block_cache_sync_all(); // 同步缓存
+        result
+    }
+
+    /// stat the file (inode_id, StatMode, nlink)
+    pub fn stat(&self) -> (u32, bool, u32) {
+        self.read_disk_inode(|disk_node| {
+            return (self.inode_id as u32, disk_node.is_file(), disk_node.nlink);
+        })
     }
 }
