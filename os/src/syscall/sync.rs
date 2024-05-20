@@ -70,8 +70,8 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
         process_inner.mutex_list.push(mutex);
 
         process_inner.mutex_detection.available.push(1);
-        process_inner.mutex_detection.allocation[tid].push(0);
-        process_inner.mutex_detection.need[tid].push(0);
+        process_inner.mutex_detection.allocation.iter_mut().for_each(|v| v.push(0));
+        process_inner.mutex_detection.need.iter_mut().for_each(|v| v.push(0));
 
         process_inner.mutex_list.len() as isize - 1
     }
@@ -205,8 +205,8 @@ pub fn sys_semaphore_create(res_count: usize) -> isize {
             .push(Some(Arc::new(Semaphore::new(res_count))));
 
         process_inner.semaphore_detection.available.push(res_count);
-        process_inner.semaphore_detection.allocation[tid].push(0);
-        process_inner.semaphore_detection.need[tid].push(0);
+        process_inner.semaphore_detection.allocation.iter_mut().for_each(|v| v.push(0));
+        process_inner.semaphore_detection.need.iter_mut().for_each(|v| v.push(0));
 
         process_inner.semaphore_list.len() - 1
     };
