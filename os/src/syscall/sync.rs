@@ -34,6 +34,15 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
             .unwrap()
             .tid
     );
+
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
+
     let process = current_process();
     let mutex: Option<Arc<dyn Mutex>> = if !blocking {
         Some(Arc::new(MutexSpin::new()))
@@ -48,10 +57,22 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
         .find(|(_, item)| item.is_none())
         .map(|(id, _)| id)
     {
+        // if there's an empty position in mutex_list
         process_inner.mutex_list[id] = mutex;
+
+        process_inner.mutex_detection.available[id] = 1;
+        process_inner.mutex_detection.allocation[tid][id] = 0;
+        process_inner.mutex_detection.need[tid][id] = 0;
+
         id as isize
     } else {
+        // if there's no empty position in mutex_list, create a new one
         process_inner.mutex_list.push(mutex);
+
+        process_inner.mutex_detection.available.push(1);
+        process_inner.mutex_detection.allocation[tid].push(0);
+        process_inner.mutex_detection.need[tid].push(0);
+
         process_inner.mutex_list.len() as isize - 1
     }
 }
@@ -68,12 +89,37 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
             .unwrap()
             .tid
     );
+
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
+
     let process = current_process();
-    let process_inner = process.inner_exclusive_access();
+    let mut process_inner = process.inner_exclusive_access();
+
+    // now the thread need a mutex
+    process_inner.mutex_detection.need[tid][mutex_id] += 1;
+    debug!("now need is {}", process_inner.mutex_detection.need[tid][mutex_id]);
+    // check if there would be a dead lock
+    if process_inner.enbale_dead_lock_detection && !process_inner.mutex_detection.check() {
+        return -0xDEAD;
+    }
+
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
     drop(process);
     mutex.lock();
+
+    // now we already get the mutex
+    let process = current_process();
+    let mut process_inner = process.inner_exclusive_access();
+    process_inner.mutex_detection.available[mutex_id] -= 1;
+    process_inner.mutex_detection.need[tid][mutex_id] -= 1;
+    process_inner.mutex_detection.allocation[tid][mutex_id] += 1;
     0
 }
 /// mutex unlock syscall
@@ -89,12 +135,27 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
             .unwrap()
             .tid
     );
+
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
     drop(process);
     mutex.unlock();
+
+    // now we release the mutex
+    let process = current_process();
+    let mut process_inner = process.inner_exclusive_access();
+    process_inner.mutex_detection.available[mutex_id] += 1;
+    process_inner.mutex_detection.allocation[tid][mutex_id] -= 1;
+
     0
 }
 /// semaphore create syscall
@@ -245,7 +306,17 @@ pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
 /// enable deadlock detection syscall
 ///
 /// YOUR JOB: Implement deadlock detection, but might not all in this syscall
-pub fn sys_enable_deadlock_detect(_enabled: usize) -> isize {
+pub fn sys_enable_deadlock_detect(enabled: usize) -> isize {
     trace!("kernel: sys_enable_deadlock_detect NOT IMPLEMENTED");
+
+    let process = current_process();
+    let mut process_inner = process.inner_exclusive_access();
+    if enabled == 1 {
+        process_inner.enbale_dead_lock_detection = true;
+        return 0;
+    } else if enabled == 0 {
+        process_inner.enbale_dead_lock_detection = false;
+        return 0;
+    }
     -1
 }
