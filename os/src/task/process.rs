@@ -90,17 +90,35 @@ impl DeadLockDetection {
         let mut finish = vec![false; self.allocation.len()];
         let m = self.available.len();
         let n = self.allocation.len();
-        debug!("{} threads, {} resources", n ,m);
+        debug!("{} threads, {} resources", n, m);
+
         let mut cnt = 0;
-        for i in 0..n {
-            for j in 0..m {
-                debug!("need({},{})={}, work({})={}", i, j, self.need[i][j], j, work[j]);
-                if finish[i] == false && self.need[i][j] <= work[j] {
-                    work[j] += self.allocation[i][j];
-                    finish[i] = true;
-                    cnt += 1;
-                    debug!("thread {} get recource {}", i, j);
+        loop {
+            let mut found = false;
+            for i in 0..n {
+                if !finish[i] {
+                    let mut flag = true;
+                    for j in 0..m {
+                        if self.need[i][j] > work[j] {
+                            flag = false;
+                            break;
+                        }
+                    }
+                    if flag {
+                        for j in 0..m {
+                            // debug!("need({},{})={}, work({})={}", i, j, self.need[i][j], j, work[j]);
+                            work[j] += self.allocation[i][j];
+
+                            debug!("thread {} get recource {}", i, j);
+                        }
+                        finish[i] = true;
+                        cnt += 1;
+                        found = true;
+                    }
                 }
+            }
+            if !found {
+                break;
             }
         }
         if cnt == n {

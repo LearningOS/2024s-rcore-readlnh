@@ -38,6 +38,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
 
     // add new thread to dead lock detection
     process_inner.mutex_detection.add_thread();
+    process_inner.semaphore_detection.add_thread();
 
     // add new thread to current process
     let tasks = &mut process_inner.tasks;
